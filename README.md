@@ -21,7 +21,7 @@ cargo run --bin hello-triangle
 
 ### Getting started
 
-- Hello triangle (`hello-triangle`)
+- [Hello triangle](tutorials/getting-started/hello-triangle.md) (`hello-triangle`)
 
 ## Acknowledgements
 
