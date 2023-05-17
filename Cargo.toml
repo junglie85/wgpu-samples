@@ -1,0 +1,11 @@
+[package]
+name = "wgpu-tutorial"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winit = "0.28.6"
+
+[[bin]]
+name = "hello-triangle"
+path = "src/bin/getting-started/hello-triangle/main.rs"
