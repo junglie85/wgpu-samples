@@ -23,6 +23,8 @@ cargo run --bin hello-triangle
 
 - [Hello triangle](samples/hello-triangle) (`hello-triangle`)
 - [Hello rectangle](samples/hello-rectangle) (`hello-rectangle`)
+- [Shaders (VBO)](samples/shaders) (`shaders`)
+- [Shaders (UBO)](samples/shaders-uniform) (`shaders-uniform`)
 
 ## Acknowledgements
 
