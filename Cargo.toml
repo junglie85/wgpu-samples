@@ -1,11 +1,19 @@
 [package]
-name = "wgpu-tutorial"
+name = "wgpu-samples"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytemuck = "1.13.1"
+bytemuck_derive = "1.4.1"
+futures = "0.3.28"
+wgpu = "0.16.0"
 winit = "0.28.6"
 
 [[bin]]
 name = "hello-triangle"
-path = "src/bin/getting-started/hello-triangle/main.rs"
+path = "samples/hello-triangle/main.rs"
+
+[[bin]]
+name = "hello-rectangle"
+path = "samples/hello-rectangle/main.rs"

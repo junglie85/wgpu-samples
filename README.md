@@ -1,19 +1,19 @@
-# Wgpu Tutorial
+# Wgpu Samples
 
-Wgpu tutorials based on [Learn OpenGL](https://learnopengl.com/).
+Wgpu samples based on [Learn OpenGL](https://learnopengl.com/).
 
-## Tutorials
+## Samples
 
-I've tried to follow the order of the original tutorials as best as possible.
+I've tried to follow the order of the original tutorials as best as possible but have added or reorganised samples where I think it makes sense.
 The following sections serve as a contents page of sorts.
-To run a specific example, type:
+To run a specific sample, type:
 
 ```
-cargo run --bin EXAMPLE_NAME
+cargo run --bin SAMPLE_NAME
 ```
 
-The corresponding name is shown next to the example in the below list.
-For example, to run the _Hello triangle_ example, type:
+The corresponding name is shown next to the sample in the below list.
+For example, to run the _Hello triangle_ sample, type:
 
 ```
 cargo run --bin hello-triangle
@@ -21,7 +21,8 @@ cargo run --bin hello-triangle
 
 ### Getting started
 
-- [Hello triangle](tutorials/getting-started/hello-triangle.md) (`hello-triangle`)
+- [Hello triangle](samples/hello-triangle) (`hello-triangle`)
+- [Hello rectangle](samples/hello-rectangle) (`hello-rectangle`)
 
 ## Acknowledgements
 
