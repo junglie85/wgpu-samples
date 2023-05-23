@@ -25,3 +25,7 @@ path = "samples/shaders/main.rs"
 [[bin]]
 name = "shaders-uniform"
 path = "samples/shaders-uniform/main.rs"
+
+[[bin]]
+name = "textures"
+path = "samples/textures/main.rs"
