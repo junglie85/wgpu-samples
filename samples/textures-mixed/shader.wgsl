@@ -21,13 +21,21 @@ fn vs_main(in: VsIn) -> VsOut {
 
 @group(0)
 @binding(0)
-var texture: texture_2d<f32>;
+var texture_sampler: sampler;
 
 @group(0)
 @binding(1)
-var texture_sampler: sampler;
+var texture_1: texture_2d<f32>;
+
+@group(0)
+@binding(2)
+var texture_2: texture_2d<f32>;
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    return textureSample(texture, texture_sampler, in.tex_coord) * in.color;
+    return mix(
+        textureSample(texture_1, texture_sampler, in.tex_coord),
+        textureSample(texture_2, texture_sampler, in.tex_coord),
+        0.2
+    );
 }

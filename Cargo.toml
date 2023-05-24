@@ -7,6 +7,10 @@ edition = "2021"
 bytemuck = "1.13.1"
 bytemuck_derive = "1.4.1"
 futures = "0.3.28"
+image = { version = "0.24.6", default-features = false, features = [
+    "jpeg",
+    "png",
+] }
 wgpu = "0.16.0"
 winit = "0.28.6"
 
@@ -29,3 +33,7 @@ path = "samples/shaders-uniform/main.rs"
 [[bin]]
 name = "textures"
 path = "samples/textures/main.rs"
+
+[[bin]]
+name = "textures-mixed"
+path = "samples/textures-mixed/main.rs"

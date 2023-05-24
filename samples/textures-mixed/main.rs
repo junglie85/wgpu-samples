@@ -72,7 +72,7 @@ fn main() {
 
     let window = WindowBuilder::new()
         .with_inner_size(LogicalSize::new(1280, 720))
-        .with_title("Textures")
+        .with_title("Textures mixed")
         .with_visible(false)
         .build(&event_loop)
         .expect("failed to create a window");
@@ -110,6 +110,12 @@ fn main() {
             BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
                     sample_type: TextureSampleType::Float { filterable: true },
                     view_dimension: TextureViewDimension::D2,
@@ -118,9 +124,13 @@ fn main() {
                 count: None,
             },
             BindGroupLayoutEntry {
-                binding: 1,
+                binding: 2,
                 visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
                 count: None,
             },
         ],
@@ -166,6 +176,15 @@ fn main() {
         multiview: None,
     });
 
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        label: None,
+        address_mode_u: AddressMode::Repeat,
+        address_mode_v: AddressMode::Repeat,
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        ..Default::default()
+    });
+
     let mut config = SurfaceConfiguration {
         usage: TextureUsages::RENDER_ATTACHMENT,
         format: swapchian_format,
@@ -201,20 +220,20 @@ fn main() {
         mapped_at_creation: false,
     });
 
-    let bytes = assets::load("assets/container.jpg").expect("unable to open file");
-    let image = image::load_from_memory(&bytes).expect("unable to load image");
-    let image_data = image.to_rgba8();
-    let image_size = image.dimensions();
+    let container_bytes = assets::load("assets/container.jpg").expect("unable to open file");
+    let container_image = image::load_from_memory(&container_bytes).expect("unable to load image");
+    let container_image_data = container_image.to_rgba8();
+    let container_image_size = container_image.dimensions();
 
-    let texture_size = Extent3d {
-        width: image_size.0,
-        height: image_size.1,
+    let container_texture_size = Extent3d {
+        width: container_image_size.0,
+        height: container_image_size.1,
         depth_or_array_layers: 1,
     };
 
-    let texture = device.create_texture(&TextureDescriptor {
-        label: None,
-        size: texture_size,
+    let container_texture = device.create_texture(&TextureDescriptor {
+        label: Some("texture::container"),
+        size: container_texture_size,
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
@@ -222,16 +241,30 @@ fn main() {
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let texture_view = texture.create_view(&TextureViewDescriptor::default());
+    let container_texture_view = container_texture.create_view(&TextureViewDescriptor::default());
 
-    let sampler = device.create_sampler(&SamplerDescriptor {
-        label: None,
-        address_mode_u: AddressMode::Repeat,
-        address_mode_v: AddressMode::Repeat,
-        mag_filter: FilterMode::Linear,
-        min_filter: FilterMode::Linear,
-        ..Default::default()
+    let face_bytes = assets::load("assets/awesomeface.png").expect("unable to open file");
+    let face_image = image::load_from_memory(&face_bytes).expect("unable to load image");
+    let face_image_data = face_image.to_rgba8();
+    let face_image_size = face_image.dimensions();
+
+    let face_texture_size = Extent3d {
+        width: container_image_size.0,
+        height: container_image_size.1,
+        depth_or_array_layers: 1,
+    };
+
+    let face_texture = device.create_texture(&TextureDescriptor {
+        label: Some("texture::face"),
+        size: face_texture_size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
     });
+    let face_texture_view = face_texture.create_view(&TextureViewDescriptor::default());
 
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: None,
@@ -239,11 +272,15 @@ fn main() {
         entries: &[
             BindGroupEntry {
                 binding: 0,
-                resource: BindingResource::TextureView(&texture_view),
+                resource: BindingResource::Sampler(&sampler),
             },
             BindGroupEntry {
                 binding: 1,
-                resource: BindingResource::Sampler(&sampler),
+                resource: BindingResource::TextureView(&container_texture_view),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::TextureView(&face_texture_view),
             },
         ],
     });
@@ -251,14 +288,24 @@ fn main() {
     queue.write_buffer(&vbo, 0, cast_slice(&vertices));
     queue.write_buffer(&ibo, 0, cast_slice(&indices));
     queue.write_texture(
-        texture.as_image_copy(),
-        &image_data,
+        container_texture.as_image_copy(),
+        &container_image_data,
         ImageDataLayout {
             offset: 0,
-            bytes_per_row: Some(4 * image_size.0),
-            rows_per_image: Some(image_size.1),
+            bytes_per_row: Some(4 * container_image_size.0),
+            rows_per_image: Some(container_image_size.1),
         },
-        texture_size,
+        container_texture_size,
+    );
+    queue.write_texture(
+        face_texture.as_image_copy(),
+        &face_image_data,
+        ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * face_image_size.0),
+            rows_per_image: Some(face_image_size.1),
+        },
+        face_texture_size,
     );
 
     window.set_visible(true);
