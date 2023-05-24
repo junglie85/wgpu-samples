@@ -42,3 +42,7 @@ path = "samples/textures-mixed/main.rs"
 [[bin]]
 name = "transformations"
 path = "samples/transformations/main.rs"
+
+[[bin]]
+name = "coordinate-systems"
+path = "samples/coordinate-systems/main.rs"
