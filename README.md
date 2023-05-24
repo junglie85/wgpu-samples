@@ -29,6 +29,7 @@ cargo run --bin hello-triangle
 - [Textures mixed](samples/textures-mixed) (`textures-mixed`)
 - [Transformations](samples/transformations) (`transformations`)
 - [Coordinate systems](samples/coordinate-systems) (`coordinate-systems`)
+- [More cubes](samples/more-cubes) (`more-cubes`)
 
 ## Acknowledgements
 

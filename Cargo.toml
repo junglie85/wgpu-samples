@@ -46,3 +46,7 @@ path = "samples/transformations/main.rs"
 [[bin]]
 name = "coordinate-systems"
 path = "samples/coordinate-systems/main.rs"
+
+[[bin]]
+name = "more-cubes"
+path = "samples/more-cubes/main.rs"
