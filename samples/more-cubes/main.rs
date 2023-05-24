@@ -28,6 +28,8 @@ use winit::{
     window::WindowBuilder,
 };
 
+const SCREEN_WIDTH: u32 = 1280;
+const SCREEN_HEIGHT: u32 = 720;
 const MAX_INSTANCES: u32 = 10;
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
@@ -128,7 +130,7 @@ fn main() {
     let mut event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
-        .with_inner_size(LogicalSize::new(1280, 720))
+        .with_inner_size(LogicalSize::new(SCREEN_WIDTH, SCREEN_HEIGHT))
         .with_title("More cubes")
         .with_visible(false)
         .build(&event_loop)
@@ -243,7 +245,7 @@ fn main() {
         depth_stencil: Some(DepthStencilState {
             format: TextureFormat::Depth32Float,
             depth_write_enabled: true,
-            depth_compare: CompareFunction::Greater,
+            depth_compare: CompareFunction::Less,
             stencil: StencilState::default(),
             bias: DepthBiasState::default(),
         }),
@@ -448,7 +450,12 @@ fn main() {
     );
 
     let view = Mat4::from_translation(Vec3::new(0.0, 0.0, -3.0));
-    let projection = Mat4::perspective_rh(45.0_f32.to_radians(), 1280.0 / 720.0, 0.1, 100.0);
+    let projection = Mat4::perspective_rh(
+        45.0_f32.to_radians(),
+        SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32,
+        0.1,
+        100.0,
+    );
     let globals = Globals::new(view, projection);
 
     let positions = [
@@ -463,14 +470,18 @@ fn main() {
         Vec3::new(1.5, 0.2, -1.5),
         Vec3::new(-1.3, 1.0, -1.5),
     ];
-    let mut instances = Vec::with_capacity(positions.len());
+
+    let instances = positions
+        .iter()
+        .enumerate()
+        .map(|(i, position)| {
+            let angle = 20.0_f32 * i as f32;
+            let rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.3, 0.5), angle.to_radians());
+            let transform = Mat4::from_rotation_translation(rotation, *position);
+            Instance::new(transform)
+        })
+        .collect::<Vec<_>>();
     assert!(instances.len() as u32 <= MAX_INSTANCES);
-    for (i, position) in positions.iter().enumerate() {
-        let angle = 20.0_f32 * i as f32;
-        let rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.3, 0.5), angle.to_radians());
-        let transform = Mat4::from_rotation_translation(rotation, *position);
-        instances.push(Instance::new(transform));
-    }
 
     queue.write_buffer(&instances_vbo, 0, cast_slice(&instances));
     queue.write_buffer(&globals_ubo, 0, cast_slice(&[globals]));
@@ -537,7 +548,7 @@ fn main() {
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &depth_texture_view,
                     depth_ops: Some(Operations {
-                        load: LoadOp::Clear(0.0),
+                        load: LoadOp::Clear(1.0),
                         store: true,
                     }),
                     stencil_ops: Some(Operations {
