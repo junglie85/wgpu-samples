@@ -27,6 +27,7 @@ cargo run --bin hello-triangle
 - [Shaders (UBO)](samples/shaders-uniform) (`shaders-uniform`)
 - [Textures](samples/textures) (`textures`)
 - [Textures mixed](samples/textures-mixed) (`textures-mixed`)
+- [Transformations](samples/transformations) (`transformations`)
 
 ## Acknowledgements
 

@@ -7,6 +7,7 @@ edition = "2021"
 bytemuck = "1.13.1"
 bytemuck_derive = "1.4.1"
 futures = "0.3.28"
+glam = "0.24.0"
 image = { version = "0.24.6", default-features = false, features = [
     "jpeg",
     "png",
@@ -37,3 +38,7 @@ path = "samples/textures/main.rs"
 [[bin]]
 name = "textures-mixed"
 path = "samples/textures-mixed/main.rs"
+
+[[bin]]
+name = "transformations"
+path = "samples/transformations/main.rs"
