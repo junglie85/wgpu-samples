@@ -208,7 +208,7 @@ fn main() {
         depth_stencil: Some(DepthStencilState {
             format: TextureFormat::Depth32Float,
             depth_write_enabled: true,
-            depth_compare: CompareFunction::Greater,
+            depth_compare: CompareFunction::Less,
             stencil: StencilState::default(),
             bias: DepthBiasState::default(),
         }),
@@ -460,7 +460,7 @@ fn main() {
 
         let elapsed = Instant::now() - start_time;
         let model = Mat4::from_quat(Quat::from_axis_angle(
-            Vec3::new(0.5, 1.0, 0.0),
+            Vec3::new(0.5, 1.0, 0.0).normalize(),
             elapsed.as_secs_f32() * 50.0_f32.to_radians(),
         ));
 
@@ -492,7 +492,7 @@ fn main() {
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &depth_texture_view,
                     depth_ops: Some(Operations {
-                        load: LoadOp::Clear(0.0),
+                        load: LoadOp::Clear(1.0),
                         store: true,
                     }),
                     stencil_ops: Some(Operations {

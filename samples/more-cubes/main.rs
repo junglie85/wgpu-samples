@@ -476,7 +476,8 @@ fn main() {
         .enumerate()
         .map(|(i, position)| {
             let angle = 20.0_f32 * i as f32;
-            let rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.3, 0.5), angle.to_radians());
+            let rotation =
+                Quat::from_axis_angle(Vec3::new(1.0, 0.3, 0.5).normalize(), angle.to_radians());
             let transform = Mat4::from_rotation_translation(rotation, *position);
             Instance::new(transform)
         })
