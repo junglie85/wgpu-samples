@@ -50,3 +50,7 @@ path = "samples/coordinate-systems/main.rs"
 [[bin]]
 name = "more-cubes"
 path = "samples/more-cubes/main.rs"
+
+[[bin]]
+name = "camera"
+path = "samples/camera/main.rs"

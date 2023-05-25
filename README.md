@@ -30,6 +30,7 @@ cargo run --bin hello-triangle
 - [Transformations](samples/transformations) (`transformations`)
 - [Coordinate systems](samples/coordinate-systems) (`coordinate-systems`)
 - [More cubes](samples/more-cubes) (`more-cubes`)
+- [Camera](samples/camera) (`camera`)
 
 ## Acknowledgements
 
