@@ -521,25 +521,17 @@ fn main() {
                             create_depth_texture(&device, config.width, config.height);
                     }
 
-                    WindowEvent::CursorEntered { .. } => mouse_in_window = true,
-
-                    _ => (),
-                },
-
-                Event::DeviceEvent { event, .. } if mouse_in_window => match event {
-                    DeviceEvent::MouseMotion { delta } => {
-                        let (x, y) = delta;
-
-                        camera.yaw_pitch(x as f32, -y as f32);
+                    WindowEvent::CursorEntered { .. } => {
+                        mouse_in_window = true;
                     }
 
-                    DeviceEvent::MouseWheel { delta } => {
+                    WindowEvent::MouseWheel { delta, .. } => {
                         if let MouseScrollDelta::LineDelta(_, y) = delta {
                             camera.zoom(y);
                         }
                     }
 
-                    DeviceEvent::Key(input) => {
+                    WindowEvent::KeyboardInput { input, .. } => {
                         if let Some(key) = input.virtual_keycode {
                             match key {
                                 VirtualKeyCode::Escape if input.state == ElementState::Pressed => {
@@ -561,6 +553,16 @@ fn main() {
                                 _ => (),
                             }
                         }
+                    }
+
+                    _ => (),
+                },
+
+                Event::DeviceEvent { event, .. } if mouse_in_window => match event {
+                    DeviceEvent::MouseMotion { delta } => {
+                        let (x, y) = delta;
+
+                        camera.yaw_pitch(x as f32, -y as f32);
                     }
 
                     _ => (),
