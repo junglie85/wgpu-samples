@@ -32,6 +32,10 @@ cargo run --bin hello-triangle
 - [More cubes](samples/more-cubes) (`more-cubes`)
 - [Camera](samples/camera) (`camera`)
 
+### Lighting
+
+- [Colors](samples/colors) (`colors`)
+
 ## Acknowledgements
 
 It would be rude to not acknowledge, up front, the key resources that I have used to learn WGPU and graphics programming.
