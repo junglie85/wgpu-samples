@@ -62,3 +62,7 @@ path = "samples/colors/main.rs"
 [[bin]]
 name = "basic-lighting"
 path = "samples/basic-lighting/main.rs"
+
+[[bin]]
+name = "materials"
+path = "samples/materials/main.rs"
