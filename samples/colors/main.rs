@@ -17,6 +17,7 @@ use wgpu::{
     TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
     VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
+use wgpu_samples::camera::{Camera, CameraDescriptor};
 use winit::{
     dpi::LogicalSize,
     event::{DeviceEvent, ElementState, Event, MouseScrollDelta, VirtualKeyCode, WindowEvent},
@@ -70,105 +71,6 @@ const INDICES: [u32; 36] = [
     16, 17, 19, 17, 18, 19, // top
     20, 21, 23, 21, 22, 23, // bottom
 ];
-
-struct Camera {
-    aspect_ratio: f32,
-    fov_y: f32,
-    z_near: f32,
-    z_far: f32,
-    position: Vec3,
-    direction: Vec3,
-    up: Vec3,
-    speed: f32,
-    yaw: f32,
-    pitch: f32,
-    mouse_sensitivity: f32,
-}
-
-impl Camera {
-    fn new(aspect_ratio: f32, fov_y: f32, z_near: f32, z_far: f32) -> Self {
-        let speed = 10.0;
-        let position = Vec3::new(0.0, 0.0, 3.0);
-        let direction = Vec3::new(0.0, 0.0, -1.0);
-        let up = Vec3::Y;
-        let yaw = -90.0_f32;
-        let pitch = 0.0_f32;
-        let mouse_sensitivity = 0.1;
-
-        Self {
-            aspect_ratio,
-            fov_y,
-            z_near,
-            z_far,
-            position,
-            direction,
-            up,
-            speed,
-            yaw,
-            pitch,
-            mouse_sensitivity,
-        }
-    }
-
-    fn get_view_matrix(&self) -> Mat4 {
-        Mat4::look_to_rh(self.position, self.direction, self.up)
-    }
-
-    fn get_projection_matrix(&self) -> Mat4 {
-        Mat4::perspective_rh(
-            self.fov_y.to_radians(),
-            self.aspect_ratio,
-            self.z_near,
-            self.z_far,
-        )
-    }
-
-    fn move_forward(&mut self, dt: f32) {
-        self.position += self.speed * self.direction * dt;
-    }
-
-    fn move_backward(&mut self, dt: f32) {
-        self.position -= self.speed * self.direction * dt;
-    }
-
-    fn skew_left(&mut self, dt: f32) {
-        self.position -= self.direction.cross(self.up).normalize() * self.speed * dt;
-    }
-
-    fn skew_right(&mut self, dt: f32) {
-        self.position += self.direction.cross(self.up).normalize() * self.speed * dt;
-    }
-
-    fn yaw_pitch(&mut self, yaw: f32, pitch: f32) {
-        self.yaw += yaw * self.mouse_sensitivity;
-        self.pitch += pitch * self.mouse_sensitivity;
-
-        if self.pitch > 89.0 {
-            self.pitch = 89.0;
-        }
-        if self.pitch < -89.0 {
-            self.pitch = -89.0;
-        }
-
-        let direction = Vec3::new(
-            self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),
-            self.pitch.to_radians().sin(),
-            self.yaw.to_radians().sin() * self.pitch.to_radians().cos(),
-        );
-        self.direction = direction.normalize();
-    }
-
-    fn zoom(&mut self, delta: f32) {
-        self.fov_y -= delta;
-
-        if self.fov_y < 1.0 {
-            self.fov_y = 1.0;
-        }
-        if self.fov_y > 45.0 {
-            self.fov_y = 45.0;
-        }
-    }
-}
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -511,7 +413,10 @@ fn main() {
         usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
     });
 
-    let mut camera = Camera::new(SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32, 45.0, 0.1, 100.0);
+    let mut camera = Camera::new(&CameraDescriptor {
+        aspect_ratio: SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32,
+        ..Default::default()
+    });
 
     window.set_cursor_visible(false);
     window
@@ -644,12 +549,7 @@ fn main() {
                     view: &output_texture_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color {
-                            r: 0.2,
-                            g: 0.3,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: LoadOp::Clear(Color::BLACK),
                         store: true,
                     },
                 })],
