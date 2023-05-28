@@ -35,6 +35,7 @@ cargo run --bin hello-triangle
 ### Lighting
 
 - [Colors](samples/colors) (`colors`)
+- [Basic lighting](samples/basic-lighting) (`basic-lighting`)
 
 ## Acknowledgements
 

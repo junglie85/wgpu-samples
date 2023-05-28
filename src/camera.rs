@@ -1,3 +1,4 @@
+use bytemuck_derive::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
 pub struct CameraDescriptor {
@@ -76,6 +77,15 @@ impl Camera {
         )
     }
 
+    pub fn get_gpu_camera(&self) -> GpuCamera {
+        GpuCamera {
+            projection: self.get_projection_matrix().to_cols_array(),
+            view: self.get_view_matrix().to_cols_array(),
+            position: self.position.to_array(),
+            _pad: 0.0,
+        }
+    }
+
     pub fn move_forward(&mut self, dt: f32) {
         self.position += self.speed * self.direction * dt;
     }
@@ -121,4 +131,13 @@ impl Camera {
             self.fov_y = 45.0;
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+pub struct GpuCamera {
+    projection: [f32; 16],
+    view: [f32; 16],
+    position: [f32; 3],
+    _pad: f32,
 }

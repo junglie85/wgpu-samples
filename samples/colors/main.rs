@@ -17,7 +17,7 @@ use wgpu::{
     TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
     VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
-use wgpu_samples::camera::{Camera, CameraDescriptor};
+use wgpu_samples::camera::{Camera, CameraDescriptor, GpuCamera};
 use winit::{
     dpi::LogicalSize,
     event::{DeviceEvent, ElementState, Event, MouseScrollDelta, VirtualKeyCode, WindowEvent},
@@ -227,22 +227,12 @@ fn main() {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new(size_of::<[f32; 16]>() as u64),
+                    min_binding_size: BufferSize::new(size_of::<GpuCamera>() as u64),
                 },
                 count: None,
             },
             BindGroupLayoutEntry {
                 binding: 1,
-                visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new(size_of::<[f32; 16]>() as u64),
-                },
-                count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 2,
                 visibility: ShaderStages::VERTEX,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
@@ -260,16 +250,9 @@ fn main() {
         push_constant_ranges: &[],
     });
 
-    let projection_ubo = device.create_buffer(&BufferDescriptor {
-        label: Some("ubo::projection"),
-        size: size_of::<[f32; 16]>() as u64,
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
     let camera_ubo = device.create_buffer(&BufferDescriptor {
         label: Some("ubo::camera"),
-        size: size_of::<[f32; 16]>() as u64,
+        size: size_of::<GpuCamera>() as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -287,14 +270,10 @@ fn main() {
         entries: &[
             BindGroupEntry {
                 binding: 0,
-                resource: projection_ubo.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 1,
                 resource: camera_ubo.as_entire_binding(),
             },
             BindGroupEntry {
-                binding: 2,
+                binding: 1,
                 resource: lighting_ubo.as_entire_binding(),
             },
         ],
@@ -521,16 +500,7 @@ fn main() {
             }
         });
 
-        queue.write_buffer(
-            &projection_ubo,
-            0,
-            cast_slice(&camera.get_projection_matrix().to_cols_array()),
-        );
-        queue.write_buffer(
-            &camera_ubo,
-            0,
-            cast_slice(&camera.get_view_matrix().to_cols_array()),
-        );
+        queue.write_buffer(&camera_ubo, 0, cast_slice(&[camera.get_gpu_camera()]));
         queue.write_buffer(&lighting_ubo, 0, cast_slice(&light_color.to_array()));
 
         let frame = surface
