@@ -100,50 +100,16 @@ impl Vertex {
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
-struct Instance {
-    transform: [f32; 16],
+struct Model {
+    model_matrix: [f32; 16],
     color: [f32; 4],
 }
 
-impl Instance {
-    fn new(transform: Mat4, color: Vec4) -> Self {
+impl Model {
+    fn new(model_matrix: Mat4, color: Vec4) -> Self {
         Self {
-            transform: transform.to_cols_array(),
+            model_matrix: model_matrix.to_cols_array(),
             color: color.to_array(),
-        }
-    }
-
-    fn layout() -> VertexBufferLayout<'static> {
-        VertexBufferLayout {
-            array_stride: size_of::<Instance>() as u64,
-            step_mode: VertexStepMode::Instance,
-            attributes: &[
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: 0,
-                    shader_location: 1,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 4]>() as u64,
-                    shader_location: 2,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 8]>() as u64,
-                    shader_location: 3,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 12]>() as u64,
-                    shader_location: 4,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 16]>() as u64,
-                    shader_location: 5,
-                },
-            ],
         }
     }
 }
@@ -233,7 +199,7 @@ fn main() {
             },
             BindGroupLayoutEntry {
                 binding: 1,
-                visibility: ShaderStages::VERTEX,
+                visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -244,9 +210,29 @@ fn main() {
         ],
     });
 
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[&scene_bind_group_layout],
+    let model_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout::model"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(size_of::<Model>() as u64),
+            },
+            count: None,
+        }],
+    });
+
+    let light_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("pipeline_layout::light"),
+        bind_group_layouts: &[&scene_bind_group_layout, &model_bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
+    let model_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("pipeline_layout::model"),
+        bind_group_layouts: &[&scene_bind_group_layout, &model_bind_group_layout],
         push_constant_ranges: &[],
     });
 
@@ -287,11 +273,11 @@ fn main() {
 
     let light_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("render_pipeline::light"),
-        layout: Some(&pipeline_layout),
+        layout: Some(&light_pipeline_layout),
         vertex: VertexState {
             module: &light_shader_module,
             entry_point: "vs_main",
-            buffers: &[Vertex::layout(), Instance::layout()],
+            buffers: &[Vertex::layout()],
         },
         primitive: PrimitiveState {
             cull_mode: Some(Face::Back),
@@ -321,11 +307,11 @@ fn main() {
 
     let model_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("render_pipeline::model"),
-        layout: Some(&pipeline_layout),
+        layout: Some(&model_pipeline_layout),
         vertex: VertexState {
             module: &model_shader_module,
             entry_point: "vs_main",
-            buffers: &[Vertex::layout(), Instance::layout()],
+            buffers: &[Vertex::layout()],
         },
         primitive: PrimitiveState {
             cull_mode: Some(Face::Back),
@@ -347,26 +333,26 @@ fn main() {
         multiview: None,
     });
 
-    let light_vbo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vbo::light"),
+    let light_cube_vbo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("vbo::light_cube"),
         contents: cast_slice(&VERTICES),
         usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
     });
 
-    let light_ibo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("ibo::light"),
+    let light_cube_ibo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ibo::light_cube"),
         contents: cast_slice(&INDICES),
         usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
     });
 
-    let model_vbo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vbo::model"),
+    let cube_vbo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("vbo::cube"),
         contents: cast_slice(&VERTICES),
         usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
     });
 
-    let model_ibo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("ibo::model"),
+    let cube_ibo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ibo::cube"),
         contents: cast_slice(&INDICES),
         usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
     });
@@ -376,21 +362,42 @@ fn main() {
         Quat::IDENTITY,
         Vec3::new(1.2, 1.0, 2.0),
     );
-    let light_color = Vec4::new(1.0, 1.0, 1.0, 1.0);
-    let light_instance = Instance::new(light_transform, light_color);
-    let light_instance_vbo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vbo::light_instance"),
-        contents: cast_slice(&[light_instance]),
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    let light_cube = Model::new(light_transform, Vec4::new(1.0, 1.0, 1.0, 1.0));
+
+    let light_cube_ubo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ubo::light_cube"),
+        contents: cast_slice(&[light_cube]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    let model_transform = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
-    let model_instance = Instance::new(model_transform, Vec4::new(1.0, 0.5, 0.31, 1.0));
-    let model_instance_vbo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vbo::model_instance"),
-        contents: cast_slice(&[model_instance]),
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    let light_cube_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::light_cube"),
+        layout: &model_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: light_cube_ubo.as_entire_binding(),
+        }],
     });
+
+    let cube_transform = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
+    let cube = Model::new(cube_transform, Vec4::new(1.0, 0.5, 0.31, 1.0));
+
+    let cube_ubo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("vbo::cube"),
+        contents: cast_slice(&[cube]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let cube_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::cube"),
+        layout: &model_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: cube_ubo.as_entire_binding(),
+        }],
+    });
+
+    let light_color = Vec4::new(1.0, 1.0, 1.0, 1.0);
 
     let mut camera = Camera::new(&CameraDescriptor {
         aspect_ratio: SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32,
@@ -539,15 +546,15 @@ fn main() {
             rpass.set_bind_group(0, &scene_bind_group, &[]);
 
             rpass.set_pipeline(&light_pipeline);
-            rpass.set_vertex_buffer(0, light_vbo.slice(..));
-            rpass.set_vertex_buffer(1, light_instance_vbo.slice(..));
-            rpass.set_index_buffer(light_ibo.slice(..), IndexFormat::Uint32);
+            rpass.set_bind_group(1, &light_cube_bind_group, &[]);
+            rpass.set_vertex_buffer(0, light_cube_vbo.slice(..));
+            rpass.set_index_buffer(light_cube_ibo.slice(..), IndexFormat::Uint32);
             rpass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
 
             rpass.set_pipeline(&model_pipeline);
-            rpass.set_vertex_buffer(0, model_vbo.slice(..));
-            rpass.set_vertex_buffer(1, model_instance_vbo.slice(..));
-            rpass.set_index_buffer(model_ibo.slice(..), IndexFormat::Uint32);
+            rpass.set_bind_group(1, &cube_bind_group, &[]);
+            rpass.set_vertex_buffer(0, cube_vbo.slice(..));
+            rpass.set_index_buffer(cube_ibo.slice(..), IndexFormat::Uint32);
             rpass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
         }
 

@@ -2,18 +2,9 @@ struct VsIn {
     @location(0) position: vec3<f32>,
 };
 
-struct Instance {
-    @location(1) model_matrix_0: vec4<f32>,
-    @location(2) model_matrix_1: vec4<f32>,
-    @location(3) model_matrix_2: vec4<f32>,
-    @location(4) model_matrix_3: vec4<f32>,
-    @location(5) color: vec4<f32>,
-};
-
 struct VsOut {
     @builtin(position) position: vec4<f32>,
     @location(0) object_color: vec4<f32>,
-    @location(1) light_color: vec4<f32>,
 };
 
 struct Camera {
@@ -22,33 +13,34 @@ struct Camera {
     position: vec3<f32>,
 };
 
+struct Model {
+    model_matrix: mat4x4<f32>,
+    color: vec4<f32>,
+};
+
 @group(0)
 @binding(0)
 var<uniform> camera: Camera;
+
+@group(1)
+@binding(0)
+var<uniform> model: Model;
+
+@vertex
+fn vs_main(in: VsIn) -> VsOut {
+    let position = camera.projection * camera.view * model.model_matrix * vec4<f32>(in.position, 1.0);
+
+    return VsOut(
+        position,
+        model.color,
+    );
+}
 
 @group(0)
 @binding(1)
 var<uniform> light_color: vec4<f32>;
 
-@vertex
-fn vs_main(in: VsIn, instance: Instance) -> VsOut {
-    let model = mat4x4<f32>(
-        instance.model_matrix_0,
-        instance.model_matrix_1,
-        instance.model_matrix_2,
-        instance.model_matrix_3,
-    );
-
-    let position = camera.projection * camera.view * model * vec4<f32>(in.position, 1.0);
-
-    return VsOut(
-        position,
-        instance.color,
-        light_color,
-    );
-}
-
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    return in.light_color * in.object_color;
+    return light_color * in.object_color;
 }
