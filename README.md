@@ -35,12 +35,12 @@ cargo run --bin hello-triangle
 ### Lighting
 
 - [Colors](samples/colors) (`colors`)
+- [Basic lighting](samples/basic-lighting) (`basic-lighting`)
 
 For all of the below examples I'm using instance data instead of uniforms for values such as camera position, light colour, etc.
 I've also used `GpuCamera` and `GpuLight` structs to help manage these values, which is a minor deviation from the original.
 I'm in the process of re-writing them to use uniforms as per the original.
 
-- [Basic lighting](samples/basic-lighting) (`basic-lighting`)
 - [Materials](samples/materials) (`materials`)
 
 ## Acknowledgements
