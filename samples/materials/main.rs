@@ -3,7 +3,7 @@ use std::{borrow::Cow, iter::once, mem::size_of, time::Instant};
 use bytemuck::cast_slice;
 use bytemuck_derive::{Pod, Zeroable};
 use futures::executor::block_on;
-use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec3, Vec4};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
@@ -109,11 +109,32 @@ impl Vertex {
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
+struct Model {
+    model_matrix: [f32; 16],
+    normal_matrix: [f32; 16],
+}
+
+impl Model {
+    fn new(model_matrix: Mat4) -> Self {
+        let normal_matrix = model_matrix.inverse().transpose();
+
+        Self {
+            model_matrix: model_matrix.to_cols_array(),
+            normal_matrix: normal_matrix.to_cols_array(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
 struct Material {
     ambient: [f32; 4],
     diffuse: [f32; 4],
     specular: [f32; 4],
     shininess: f32,
+    _pad1: f32,
+    _pad2: f32,
+    _pad3: f32,
 }
 
 impl Material {
@@ -123,194 +144,33 @@ impl Material {
             diffuse: diffuse.to_array(),
             specular: specular.to_array(),
             shininess,
+            _pad1: 0.0,
+            _pad2: 0.0,
+            _pad3: 0.0,
         }
     }
 }
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
-struct ModelInstance {
-    model_matrix: [f32; 16],
-    normal_matrix: [f32; 9],
-    material: Material,
-}
-
-impl ModelInstance {
-    fn new(model_matrix: Mat4, material: Material) -> Self {
-        let normal_matrix = Mat3::from_mat4(model_matrix.inverse().transpose());
-        Self {
-            model_matrix: model_matrix.to_cols_array(),
-            normal_matrix: normal_matrix.to_cols_array(),
-            material,
-        }
-    }
-
-    fn layout() -> VertexBufferLayout<'static> {
-        VertexBufferLayout {
-            array_stride: size_of::<ModelInstance>() as u64,
-            step_mode: VertexStepMode::Instance,
-            attributes: &[
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: 0,
-                    shader_location: 2, // model_matrix_0.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 4]>() as u64,
-                    shader_location: 3, // model_matrix_1.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 8]>() as u64,
-                    shader_location: 4, // model_matrix_2.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 12]>() as u64,
-                    shader_location: 5, // model_matrix_3.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x3,
-                    offset: size_of::<[f32; 16]>() as u64,
-                    shader_location: 6, // normal_matrix_0.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x3,
-                    offset: size_of::<[f32; 19]>() as u64,
-                    shader_location: 7, // normal_matrix_1.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x3,
-                    offset: size_of::<[f32; 22]>() as u64,
-                    shader_location: 8, // normal_matrix_2.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 25]>() as u64,
-                    shader_location: 9, // material_ambient.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 29]>() as u64,
-                    shader_location: 10, // material_diffuse.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 33]>() as u64,
-                    shader_location: 11, // material_specular.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32,
-                    offset: size_of::<[f32; 37]>() as u64,
-                    shader_location: 12, // material_shininess.
-                },
-            ],
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-struct LightInstance {
-    model_matrix: [f32; 16],
-    color: [f32; 4],
-}
-
-impl LightInstance {
-    fn new(model_matrix: Mat4, color: Vec4) -> Self {
-        Self {
-            model_matrix: model_matrix.to_cols_array(),
-            color: color.to_array(),
-        }
-    }
-
-    fn layout() -> VertexBufferLayout<'static> {
-        VertexBufferLayout {
-            array_stride: size_of::<LightInstance>() as u64,
-            step_mode: VertexStepMode::Instance,
-            attributes: &[
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: 0,
-                    shader_location: 2, // model_matrix_0.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 4]>() as u64,
-                    shader_location: 3, // model_matrix_1.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 8]>() as u64,
-                    shader_location: 4, // model_matrix_2.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 12]>() as u64,
-                    shader_location: 5, // model_matrix_3.
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 16]>() as u64,
-                    shader_location: 6, // Color.
-                },
-            ],
-        }
-    }
-}
-
 struct Light {
-    position: Vec3,
-    rotation: Quat,
-    scale: Vec3,
-    ambient: Vec4,
-    diffuse: Vec4,
-    specular: Vec4,
-}
-
-impl Light {
-    fn new(
-        position: Vec3,
-        rotation: Quat,
-        scale: Vec3,
-        ambient: Vec4,
-        diffuse: Vec4,
-        specular: Vec4,
-    ) -> Self {
-        Self {
-            position,
-            rotation,
-            scale,
-            ambient,
-            diffuse,
-            specular,
-        }
-    }
-
-    fn get_transform(&self) -> Mat4 {
-        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
-    }
-
-    fn get_gpu_light(&self) -> GpuLight {
-        GpuLight {
-            ambient: self.ambient.to_array(),
-            diffuse: self.diffuse.to_array(),
-            specular: self.specular.to_array(),
-            position: self.position.to_array(),
-            _pad: 0.0,
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-struct GpuLight {
     ambient: [f32; 4],
     diffuse: [f32; 4],
     specular: [f32; 4],
     position: [f32; 3],
-    _pad: f32,
+    _pad1: f32,
+}
+
+impl Light {
+    fn new(position: Vec3, ambient: Vec4, diffuse: Vec4, specular: Vec4) -> Self {
+        Self {
+            position: position.to_array(),
+            ambient: ambient.to_array(),
+            diffuse: diffuse.to_array(),
+            specular: specular.to_array(),
+            _pad1: 0.0,
+        }
+    }
 }
 
 fn main() {
@@ -398,20 +258,77 @@ fn main() {
             },
             BindGroupLayoutEntry {
                 binding: 1,
-                visibility: ShaderStages::VERTEX_FRAGMENT,
+                visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new(size_of::<GpuLight>() as u64),
+                    min_binding_size: BufferSize::new(size_of::<Light>() as u64),
                 },
                 count: None,
             },
         ],
     });
 
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[&scene_bind_group_layout],
+    let model_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout::model"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(size_of::<Model>() as u64),
+            },
+            count: None,
+        }],
+    });
+
+    let material_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout::material"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(size_of::<Material>() as u64),
+            },
+            count: None,
+        }],
+    });
+
+    let light_cube_color_bind_group_layout =
+        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("bind_group_layout::light_cube_color"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(size_of::<[f32; 4]>() as u64),
+                },
+                count: None,
+            }],
+        });
+
+    let light_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("pipeline_layout::light"),
+        bind_group_layouts: &[
+            &scene_bind_group_layout,
+            &model_bind_group_layout,
+            &light_cube_color_bind_group_layout,
+        ],
+        push_constant_ranges: &[],
+    });
+
+    let model_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("pipeline_layout::model"),
+        bind_group_layouts: &[
+            &scene_bind_group_layout,
+            &model_bind_group_layout,
+            &material_bind_group_layout,
+        ],
         push_constant_ranges: &[],
     });
 
@@ -424,7 +341,7 @@ fn main() {
 
     let lighting_ubo = device.create_buffer(&BufferDescriptor {
         label: Some("ubo::lighting"),
-        size: size_of::<GpuLight>() as u64,
+        size: size_of::<Light>() as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -452,11 +369,11 @@ fn main() {
 
     let light_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("render_pipeline::light"),
-        layout: Some(&pipeline_layout),
+        layout: Some(&light_pipeline_layout),
         vertex: VertexState {
             module: &light_shader_module,
             entry_point: "vs_main",
-            buffers: &[Vertex::layout(), LightInstance::layout()],
+            buffers: &[Vertex::layout()],
         },
         primitive: PrimitiveState {
             cull_mode: Some(Face::Back),
@@ -486,11 +403,11 @@ fn main() {
 
     let model_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("render_pipeline::model"),
-        layout: Some(&pipeline_layout),
+        layout: Some(&model_pipeline_layout),
         vertex: VertexState {
             module: &model_shader_module,
             entry_point: "vs_main",
-            buffers: &[Vertex::layout(), ModelInstance::layout()],
+            buffers: &[Vertex::layout()],
         },
         primitive: PrimitiveState {
             cull_mode: Some(Face::Back),
@@ -512,6 +429,18 @@ fn main() {
         multiview: None,
     });
 
+    let light_cube_vbo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("vbo::light_cube"),
+        contents: cast_slice(&VERTICES),
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    });
+
+    let light_cube_ibo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ibo::light_cube"),
+        contents: cast_slice(&INDICES),
+        usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+    });
+
     let cube_vbo = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("vbo::cube"),
         contents: cast_slice(&VERTICES),
@@ -524,34 +453,91 @@ fn main() {
         usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
     });
 
-    let mut light = Light::new(
-        Vec3::new(1.2, 1.0, 2.0),
-        Quat::IDENTITY,
+    let light_position = Vec3::new(1.2, 1.0, 2.0);
+    let light_transform = Mat4::from_scale_rotation_translation(
         Vec3::new(0.2, 0.2, 0.2),
-        Vec4::new(0.2, 0.2, 0.2, 1.0),
-        Vec4::new(0.5, 0.5, 0.5, 1.0),
-        Vec4::new(1.0, 1.0, 1.0, 1.0),
+        Quat::IDENTITY,
+        light_position,
     );
-    let light_instance = LightInstance::new(light.get_transform(), Vec4::new(1.0, 1.0, 1.0, 1.0));
-    let light_instance_vbo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vbo::light_instance"),
-        contents: cast_slice(&[light_instance]),
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    let light_cube = Model::new(light_transform);
+
+    let light_cube_ubo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ubo::light_cube"),
+        contents: cast_slice(&[light_cube]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    let model_transform = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
-    let model_material = Material::new(
+    let light_cube_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::light_cube"),
+        layout: &model_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: light_cube_ubo.as_entire_binding(),
+        }],
+    });
+
+    let light_cube_color = Vec4::new(1.0, 1.0, 1.0, 1.0);
+    let light_cube_color_ubo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ubo::light_color"),
+        contents: cast_slice(&light_cube_color.to_array()),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let light_cube_color_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::light_cube_color"),
+        layout: &light_cube_color_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: light_cube_color_ubo.as_entire_binding(),
+        }],
+    });
+
+    let cube_transform = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
+    let cube = Model::new(cube_transform);
+
+    let cube_ubo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("vbo::cube"),
+        contents: cast_slice(&[cube]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let cube_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::cube"),
+        layout: &model_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: cube_ubo.as_entire_binding(),
+        }],
+    });
+
+    let cube_material = Material::new(
         Vec4::new(1.0, 0.5, 0.31, 1.0),
         Vec4::new(1.0, 0.5, 0.31, 1.0),
         Vec4::new(0.5, 0.5, 0.5, 1.0),
         32.0,
     );
-    let model_instance = ModelInstance::new(model_transform, model_material);
-    let model_instance_vbo = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("vbo::model_instance"),
-        contents: cast_slice(&[model_instance]),
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+
+    let cube_material_ubo = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("ubo::cube_material"),
+        contents: cast_slice(&[cube_material]),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
+
+    let cube_material_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::cube_material"),
+        layout: &material_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: cube_material_ubo.as_entire_binding(),
+        }],
+    });
+
+    let mut light = Light::new(
+        light_position,
+        Vec4::new(0.2, 0.2, 0.2, 1.0),
+        Vec4::new(0.5, 0.5, 0.5, 1.0),
+        Vec4::new(1.0, 1.0, 1.0, 1.0),
+    );
 
     let mut camera = Camera::new(&CameraDescriptor {
         aspect_ratio: SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32,
@@ -669,11 +655,13 @@ fn main() {
             (elapsed * 1.3).sin(),
             1.0,
         );
-        light.diffuse = light_color * 0.5;
-        light.ambient = light.diffuse * 0.2;
+
+        light.diffuse = (light_color * Vec4::new(0.5, 0.5, 0.5, 1.0)).to_array();
+        light.ambient =
+            (Vec4::from_array(light.diffuse) * Vec4::new(0.2, 0.2, 0.2, 1.0)).to_array();
 
         queue.write_buffer(&camera_ubo, 0, cast_slice(&[camera.get_gpu_camera()]));
-        queue.write_buffer(&lighting_ubo, 0, cast_slice(&[light.get_gpu_light()]));
+        queue.write_buffer(&lighting_ubo, 0, cast_slice(&[light]));
 
         let frame = surface
             .get_current_texture()
@@ -710,15 +698,18 @@ fn main() {
 
             rpass.set_bind_group(0, &scene_bind_group, &[]);
 
-            rpass.set_vertex_buffer(0, cube_vbo.slice(..));
-            rpass.set_index_buffer(cube_ibo.slice(..), IndexFormat::Uint32);
-
             rpass.set_pipeline(&light_pipeline);
-            rpass.set_vertex_buffer(1, light_instance_vbo.slice(..));
+            rpass.set_bind_group(1, &light_cube_bind_group, &[]);
+            rpass.set_bind_group(2, &light_cube_color_bind_group, &[]);
+            rpass.set_vertex_buffer(0, light_cube_vbo.slice(..));
+            rpass.set_index_buffer(light_cube_ibo.slice(..), IndexFormat::Uint32);
             rpass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
 
             rpass.set_pipeline(&model_pipeline);
-            rpass.set_vertex_buffer(1, model_instance_vbo.slice(..));
+            rpass.set_bind_group(1, &cube_bind_group, &[]);
+            rpass.set_bind_group(2, &cube_material_bind_group, &[]);
+            rpass.set_vertex_buffer(0, cube_vbo.slice(..));
+            rpass.set_index_buffer(cube_ibo.slice(..), IndexFormat::Uint32);
             rpass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
         }
 
