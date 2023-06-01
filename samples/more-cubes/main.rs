@@ -30,7 +30,6 @@ use winit::{
 
 const SCREEN_WIDTH: u32 = 1280;
 const SCREEN_HEIGHT: u32 = 720;
-const MAX_INSTANCES: u32 = 10;
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -69,43 +68,14 @@ impl Vertex {
 
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
-struct Instance {
-    transform: [f32; 16],
+struct Model {
+    model_matrix: [f32; 16],
 }
 
-impl Instance {
-    fn new(transform: Mat4) -> Self {
+impl Model {
+    fn new(model_matrix: Mat4) -> Self {
         Self {
-            transform: transform.to_cols_array(),
-        }
-    }
-
-    fn layout() -> VertexBufferLayout<'static> {
-        VertexBufferLayout {
-            array_stride: size_of::<Instance>() as u64,
-            step_mode: VertexStepMode::Instance,
-            attributes: &[
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: 0,
-                    shader_location: 2,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 4]>() as u64,
-                    shader_location: 3,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 8]>() as u64,
-                    shader_location: 4,
-                },
-                VertexAttribute {
-                    format: VertexFormat::Float32x4,
-                    offset: size_of::<[f32; 12]>() as u64,
-                    shader_location: 5,
-                },
-            ],
+            model_matrix: model_matrix.to_cols_array(),
         }
     }
 }
@@ -197,12 +167,22 @@ fn main() {
         entries: &[
             BindGroupLayoutEntry {
                 binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(size_of::<Model>() as u64),
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
             BindGroupLayoutEntry {
-                binding: 1,
+                binding: 2,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
                     sample_type: TextureSampleType::Float { filterable: true },
@@ -212,7 +192,7 @@ fn main() {
                 count: None,
             },
             BindGroupLayoutEntry {
-                binding: 2,
+                binding: 3,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Texture {
                     sample_type: TextureSampleType::Float { filterable: true },
@@ -236,7 +216,7 @@ fn main() {
         vertex: VertexState {
             module: &shader,
             entry_point: "vs_main",
-            buffers: &[Vertex::layout(), Instance::layout()],
+            buffers: &[Vertex::layout()],
         },
         primitive: PrimitiveState {
             cull_mode: Some(Face::Back),
@@ -340,6 +320,19 @@ fn main() {
         20_u32, 21, 23, 21, 22, 23, // bottom
     ];
 
+    let positions = [
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(2.0, 5.0, -15.0),
+        Vec3::new(-1.5, -2.2, -2.5),
+        Vec3::new(-3.8, -2.0, -12.3),
+        Vec3::new(2.4, -0.4, -3.5),
+        Vec3::new(-1.7, 3.0, -7.5),
+        Vec3::new(1.3, -2.0, -2.5),
+        Vec3::new(1.5, 2.0, -2.5),
+        Vec3::new(1.5, 0.2, -1.5),
+        Vec3::new(-1.3, 1.0, -1.5),
+    ];
+
     let vbo = device.create_buffer(&BufferDescriptor {
         label: Some("buffer::vbo"),
         size: size_of::<Vertex>() as u64 * vertices.len() as u64,
@@ -354,12 +347,18 @@ fn main() {
         mapped_at_creation: false,
     });
 
-    let instances_vbo = device.create_buffer(&BufferDescriptor {
-        label: Some("buffer::instances_vbo"),
-        size: size_of::<Instance>() as u64 * MAX_INSTANCES as u64,
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
+    let model_ubos = positions
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            device.create_buffer(&BufferDescriptor {
+                label: Some(&format!("buffer::model_ubo_{}", i)),
+                size: size_of::<Model>() as u64,
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        })
+        .collect::<Vec<_>>();
 
     let container_bytes = assets::load("assets/container.jpg").expect("unable to open file");
     let container_image = image::load_from_memory(&container_bytes).expect("unable to load image");
@@ -407,24 +406,34 @@ fn main() {
     });
     let face_texture_view = face_texture.create_view(&TextureViewDescriptor::default());
 
-    let model_bind_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("bind_group::model"),
-        layout: &model_bind_group_layout,
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Sampler(&sampler),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::TextureView(&container_texture_view),
-            },
-            BindGroupEntry {
-                binding: 2,
-                resource: BindingResource::TextureView(&face_texture_view),
-            },
-        ],
-    });
+    let model_bind_groups = model_ubos
+        .iter()
+        .enumerate()
+        .map(|(i, ubo)| {
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some(&format!("bind_group::model_{}", i)),
+                layout: &model_bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: ubo.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::Sampler(&sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&container_texture_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&face_texture_view),
+                    },
+                ],
+            })
+        })
+        .collect::<Vec<_>>();
 
     queue.write_buffer(&vbo, 0, cast_slice(&vertices));
     queue.write_buffer(&ibo, 0, cast_slice(&indices));
@@ -458,20 +467,7 @@ fn main() {
     );
     let globals = Globals::new(view, projection);
 
-    let positions = [
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(2.0, 5.0, -15.0),
-        Vec3::new(-1.5, -2.2, -2.5),
-        Vec3::new(-3.8, -2.0, -12.3),
-        Vec3::new(2.4, -0.4, -3.5),
-        Vec3::new(-1.7, 3.0, -7.5),
-        Vec3::new(1.3, -2.0, -2.5),
-        Vec3::new(1.5, 2.0, -2.5),
-        Vec3::new(1.5, 0.2, -1.5),
-        Vec3::new(-1.3, 1.0, -1.5),
-    ];
-
-    let instances = positions
+    let models = positions
         .iter()
         .enumerate()
         .map(|(i, position)| {
@@ -479,12 +475,17 @@ fn main() {
             let rotation =
                 Quat::from_axis_angle(Vec3::new(1.0, 0.3, 0.5).normalize(), angle.to_radians());
             let transform = Mat4::from_rotation_translation(rotation, *position);
-            Instance::new(transform)
+            Model::new(transform)
         })
         .collect::<Vec<_>>();
-    assert!(instances.len() as u32 <= MAX_INSTANCES);
+    assert!(models.len() == model_ubos.len());
 
-    queue.write_buffer(&instances_vbo, 0, cast_slice(&instances));
+    model_ubos
+        .iter()
+        .zip(models.iter())
+        .for_each(|(ubo, model)| {
+            queue.write_buffer(ubo, 0, cast_slice(&[*model]));
+        });
     queue.write_buffer(&globals_ubo, 0, cast_slice(&[globals]));
 
     window.set_visible(true);
@@ -561,11 +562,12 @@ fn main() {
 
             rpass.set_pipeline(&render_pipeline);
             rpass.set_bind_group(0, &globals_bind_group, &[]);
-            rpass.set_bind_group(1, &model_bind_group, &[]);
-            rpass.set_vertex_buffer(0, vbo.slice(..));
-            rpass.set_vertex_buffer(1, instances_vbo.slice(..));
-            rpass.set_index_buffer(ibo.slice(..), IndexFormat::Uint32);
-            rpass.draw_indexed(0..indices.len() as _, 0, 0..instances.len() as _);
+            for bind_group in &model_bind_groups {
+                rpass.set_bind_group(1, bind_group, &[]);
+                rpass.set_vertex_buffer(0, vbo.slice(..));
+                rpass.set_index_buffer(ibo.slice(..), IndexFormat::Uint32);
+                rpass.draw_indexed(0..indices.len() as _, 0, 0..1);
+            }
         }
 
         queue.submit(once(encoder.finish()));
