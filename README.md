@@ -38,6 +38,7 @@ cargo run --bin hello-triangle
 - [Colors](samples/colors) (`colors`)
 - [Basic lighting](samples/basic-lighting) (`basic-lighting`)
 - [Materials](samples/materials) (`materials`)
+- [Lighting maps](samples/lighting-maps) (`lighting-maps`)
 
 ## Acknowledgements
 
