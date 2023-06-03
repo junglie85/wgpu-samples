@@ -64,6 +64,14 @@ impl Camera {
         }
     }
 
+    pub fn get_position(&self) -> Vec3 {
+        self.position
+    }
+
+    pub fn get_direction(&self) -> Vec3 {
+        self.direction
+    }
+
     pub fn get_view_matrix(&self) -> Mat4 {
         Mat4::look_to_rh(self.position, self.direction, self.up)
     }

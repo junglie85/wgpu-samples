@@ -70,3 +70,15 @@ path = "samples/materials/main.rs"
 [[bin]]
 name = "lighting-maps"
 path = "samples/lighting-maps/main.rs"
+
+[[bin]]
+name = "light-casters-directional"
+path = "samples/light-casters-directional/main.rs"
+
+[[bin]]
+name = "light-casters-point"
+path = "samples/light-casters-point/main.rs"
+
+[[bin]]
+name = "light-casters-spotlight"
+path = "samples/light-casters-spotlight/main.rs"

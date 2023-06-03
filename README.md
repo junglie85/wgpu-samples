@@ -39,6 +39,9 @@ cargo run --bin hello-triangle
 - [Basic lighting](samples/basic-lighting) (`basic-lighting`)
 - [Materials](samples/materials) (`materials`)
 - [Lighting maps](samples/lighting-maps) (`lighting-maps`)
+- [Light casters (directional)](samples/light-casters-directional) (`light-casters-directional`)
+- [Light casters (point)](samples/light-casters-point) (`light-casters-point`)
+- [Light casters (spotlight)](samples/light-casters-spotlight) (`light-casters-spotlight`)
 
 ## Acknowledgements
 
