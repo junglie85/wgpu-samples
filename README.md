@@ -26,6 +26,7 @@ cargo run --bin hello-triangle
 - [Shaders (VBO)](samples/shaders) (`shaders`)
 - [Shaders (UBO)](samples/shaders-uniform) (`shaders-uniform`)
 - [Textures](samples/textures) (`textures`)
+- todo: Mipmaps for textures. Do it here because that's when the original introduces it.
 - [Textures mixed](samples/textures-mixed) (`textures-mixed`)
 - [Transformations](samples/transformations) (`transformations`)
 - [Coordinate systems](samples/coordinate-systems) (`coordinate-systems`)
