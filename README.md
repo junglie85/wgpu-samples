@@ -42,6 +42,7 @@ cargo run --bin hello-triangle
 - [Light casters (directional)](samples/light-casters-directional) (`light-casters-directional`)
 - [Light casters (point)](samples/light-casters-point) (`light-casters-point`)
 - [Light casters (spotlight)](samples/light-casters-spotlight) (`light-casters-spotlight`)
+- [Multiple lights](samples/multiple-lights) (`multiple-lights`)
 
 ## Acknowledgements
 
