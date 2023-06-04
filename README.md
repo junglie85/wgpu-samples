@@ -12,7 +12,7 @@ To run a specific sample, type:
 cargo run --bin SAMPLE_NAME
 ```
 
-The corresponding name is shown next to the sample in the below list.
+The `SAMPLE_NAME` to run is shown next to the respective sample in the below list.
 For example, to run the _Hello triangle_ sample, type:
 
 ```
@@ -43,6 +43,12 @@ cargo run --bin hello-triangle
 - [Light casters (point)](samples/light-casters-point) (`light-casters-point`)
 - [Light casters (spotlight)](samples/light-casters-spotlight) (`light-casters-spotlight`)
 - [Multiple lights](samples/multiple-lights) (`multiple-lights`)
+
+### Model loading
+
+I've combined the Assimp, Mesh and Model sections into one complete sample.
+
+- [Model loading](samples/model-loading) (`model-loading`)
 
 ## Acknowledgements
 
