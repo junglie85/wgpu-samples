@@ -45,6 +45,7 @@ pub struct Camera {
     yaw: f32,
     pitch: f32,
     mouse_sensitivity: f32,
+    has_mouse: bool,
 }
 
 impl Camera {
@@ -61,7 +62,16 @@ impl Camera {
             yaw: desc.yaw,
             pitch: desc.pitch,
             mouse_sensitivity: desc.mouse_sensitivity,
+            has_mouse: false,
         }
+    }
+
+    pub fn set_has_mouse(&mut self, has_mouse: bool) {
+        self.has_mouse = has_mouse;
+    }
+
+    pub fn has_mouse(&self) -> bool {
+        self.has_mouse
     }
 
     pub fn get_position(&self) -> Vec3 {
@@ -87,9 +97,9 @@ impl Camera {
 
     pub fn get_gpu_camera(&self) -> GpuCamera {
         GpuCamera {
-            projection: self.get_projection_matrix().to_cols_array(),
-            view: self.get_view_matrix().to_cols_array(),
-            position: self.position.to_array(),
+            projection: self.get_projection_matrix(),
+            view: self.get_view_matrix(),
+            position: self.position,
             _pad: 0.0,
         }
     }
@@ -144,8 +154,8 @@ impl Camera {
 #[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct GpuCamera {
-    projection: [f32; 16],
-    view: [f32; 16],
-    position: [f32; 3],
+    projection: Mat4,
+    view: Mat4,
+    position: Vec3,
     _pad: f32,
 }

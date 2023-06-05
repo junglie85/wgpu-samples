@@ -1,31 +1,81 @@
-// todo: draw triangle.
-// todo: draw a quad.
-// todo: add a camera.
+// todo: add a texture.
 // todo: add mesh.
 // todo: add model.
 // todo: assimp stuff.
 
-use std::iter::once;
+use std::{borrow::Cow, iter::once, mem::size_of, time::Instant};
 
+use bytemuck::cast_slice;
+use bytemuck_derive::{Pod, Zeroable};
 use futures::executor::block_on;
+use glam::{Mat4, Quat, Vec3};
 use wgpu::{
-    Adapter, Backends, Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Extent3d,
-    Instance, InstanceDescriptor, LoadOp, Operations, PowerPreference, PresentMode, Queue,
+    Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingType, BufferBindingType, BufferDescriptor, BufferSize,
+    BufferUsages, Color, CommandEncoderDescriptor, CompareFunction, DepthBiasState,
+    DepthStencilState, Device, DeviceDescriptor, Extent3d, Face, FragmentState, FrontFace,
+    IndexFormat, Instance, InstanceDescriptor, LoadOp, MultisampleState, Operations,
+    PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, Queue,
     RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-    RequestAdapterOptions, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
+    RenderPipelineDescriptor, RequestAdapterOptions, ShaderModuleDescriptor, ShaderSource,
+    ShaderStages, StencilState, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
     TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
+    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
+use wgpu_samples::camera::{Camera, CameraDescriptor, GpuCamera};
 use winit::{
     dpi::LogicalSize,
-    event::{Event, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, MouseScrollDelta, VirtualKeyCode, WindowEvent},
     event_loop::EventLoop,
     platform::run_return::EventLoopExtRunReturn,
-    window::{Window, WindowBuilder},
+    window::{CursorGrabMode, Window, WindowBuilder},
 };
 
 const SCREEN_WIDTH: u32 = 1280;
 const SCREEN_HEIGHT: u32 = 720;
 const TITLE: &'static str = "Model loading";
+
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct Vertex {
+    position: Vec3,
+}
+
+impl Vertex {
+    fn new(position: Vec3) -> Self {
+        Self { position }
+    }
+
+    fn layout() -> VertexBufferLayout<'static> {
+        VertexBufferLayout {
+            array_stride: size_of::<Vertex>() as u64,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &[VertexAttribute {
+                format: VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct Transform {
+    model_matrix: Mat4,
+    normal_matrix: Mat4,
+}
+
+impl Transform {
+    fn new(model_matrix: Mat4) -> Self {
+        let normal_matrix = model_matrix.inverse().transpose();
+
+        Self {
+            model_matrix,
+            normal_matrix,
+        }
+    }
+}
 
 fn main() {
     let mut event_loop = EventLoop::new();
@@ -48,15 +98,164 @@ fn main() {
         &device,
     );
 
+    let global_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout::global"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(size_of::<GpuCamera>() as u64),
+            },
+            count: None,
+        }],
+    });
+
+    let transform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout::transform"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(size_of::<Transform>() as u64),
+            },
+            count: None,
+        }],
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("pipeline_layout"),
+        bind_group_layouts: &[&global_bind_group_layout, &transform_bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
     // Define pipelines.
 
     let (mut depth_texture, mut depth_texture_view) =
         create_depth_texture(&device, physical_size.width, physical_size.height);
 
-    // grab mouse.
+    let shader_src = include_str!("shader.wgsl");
+    let shader_module = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("shader_module"),
+        source: ShaderSource::Wgsl(Cow::Borrowed(shader_src)),
+    });
+
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("render_pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader_module,
+            entry_point: "vs_main",
+            buffers: &[Vertex::layout()],
+        },
+        primitive: PrimitiveState {
+            front_face: FrontFace::Ccw,
+            cull_mode: Some(Face::Back),
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilState {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader_module,
+            entry_point: "fs_main",
+            targets: &[Some(surface_config.format.into())],
+        }),
+        multiview: None,
+    });
+
+    // Game objects.
+    let mut camera = Camera::new(&CameraDescriptor {
+        aspect_ratio: SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32,
+        ..Default::default()
+    });
+
+    let camera_ubo = device.create_buffer(&BufferDescriptor {
+        label: Some("ubo::camera"),
+        size: size_of::<GpuCamera>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let global_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::global"),
+        layout: &global_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: camera_ubo.as_entire_binding(),
+        }],
+    });
+
+    let vertices = [
+        Vertex::new(Vec3::new(-0.5, 0.5, 0.0)),
+        Vertex::new(Vec3::new(-0.5, -0.5, 0.0)),
+        Vertex::new(Vec3::new(0.5, -0.5, 0.0)),
+        Vertex::new(Vec3::new(0.5, 0.5, 0.0)),
+    ];
+
+    let indices: [u32; 6] = [0, 1, 2, 0, 2, 3];
+
+    let transform = Transform::new(Mat4::from_scale_rotation_translation(
+        Vec3::ONE,
+        Quat::IDENTITY,
+        Vec3::ZERO,
+    ));
+
+    let vbo = device.create_buffer(&BufferDescriptor {
+        label: Some("vbo"),
+        size: size_of::<Vertex>() as u64 * vertices.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let ibo = device.create_buffer(&BufferDescriptor {
+        label: Some("ibo"),
+        size: size_of::<u32>() as u64 * indices.len() as u64,
+        usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let transform_ubo = device.create_buffer(&BufferDescriptor {
+        label: Some("ubo::transform"),
+        size: size_of::<Transform>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let transform_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("bind_group::transform"),
+        layout: &transform_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: transform_ubo.as_entire_binding(),
+        }],
+    });
+
+    queue.write_buffer(&vbo, 0, cast_slice(&vertices));
+    queue.write_buffer(&ibo, 0, cast_slice(&indices));
+    queue.write_buffer(&transform_ubo, 0, cast_slice(&[transform]));
+
+    window.set_cursor_visible(false);
+    window
+        .set_cursor_grab(CursorGrabMode::Confined)
+        .expect("failed to grab cursor");
     window.set_visible(true);
+
+    let mut last_time = Instant::now();
     let mut running = true;
     while running {
+        let current_time = Instant::now();
+        let dt = (current_time - last_time).as_secs_f32();
+        last_time = current_time;
+
         running = process_events(
             &mut event_loop,
             &window,
@@ -65,9 +264,11 @@ fn main() {
             &mut surface_config,
             &mut depth_texture,
             &mut depth_texture_view,
+            &mut camera,
+            dt,
         );
 
-        // Update.
+        queue.write_buffer(&camera_ubo, 0, cast_slice(&[camera.get_gpu_camera()]));
 
         let frame = surface
             .get_current_texture()
@@ -79,7 +280,7 @@ fn main() {
         });
 
         {
-            let rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+            let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("render_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &output_texture_view,
@@ -101,6 +302,13 @@ fn main() {
                     }),
                 }),
             });
+
+            rpass.set_bind_group(0, &global_bind_group, &[]);
+            rpass.set_bind_group(1, &transform_bind_group, &[]);
+            rpass.set_pipeline(&pipeline);
+            rpass.set_vertex_buffer(0, vbo.slice(..));
+            rpass.set_index_buffer(ibo.slice(..), IndexFormat::Uint32);
+            rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
         }
 
         queue.submit(once(encoder.finish()));
@@ -206,6 +414,8 @@ fn process_events(
     surface_config: &mut SurfaceConfiguration,
     depth_texture: &mut Texture,
     depth_texture_view: &mut TextureView,
+    camera: &mut Camera,
+    dt: f32,
 ) -> bool {
     let mut quit = false;
 
@@ -232,6 +442,50 @@ fn process_events(
 
                     (*depth_texture, *depth_texture_view) =
                         create_depth_texture(&device, surface_config.width, surface_config.height);
+                }
+
+                WindowEvent::CursorEntered { .. } => {
+                    camera.set_has_mouse(true);
+                }
+
+                WindowEvent::MouseWheel { delta, .. } => {
+                    if let MouseScrollDelta::LineDelta(_, y) = delta {
+                        camera.zoom(y);
+                    }
+                }
+
+                WindowEvent::KeyboardInput { input, .. } => {
+                    if let Some(key) = input.virtual_keycode {
+                        match key {
+                            VirtualKeyCode::Escape if input.state == ElementState::Pressed => {
+                                quit = true;
+                            }
+                            VirtualKeyCode::W if input.state == ElementState::Pressed => {
+                                camera.move_forward(dt);
+                            }
+                            VirtualKeyCode::S if input.state == ElementState::Pressed => {
+                                camera.move_backward(dt);
+                            }
+                            VirtualKeyCode::A if input.state == ElementState::Pressed => {
+                                camera.skew_left(dt);
+                            }
+                            VirtualKeyCode::D if input.state == ElementState::Pressed => {
+                                camera.skew_right(dt);
+                            }
+
+                            _ => (),
+                        }
+                    }
+                }
+
+                _ => (),
+            },
+
+            Event::DeviceEvent { event, .. } if camera.has_mouse() => match event {
+                DeviceEvent::MouseMotion { delta } => {
+                    let (x, y) = delta;
+
+                    camera.yaw_pitch(x as f32, -y as f32);
                 }
 
                 _ => (),
