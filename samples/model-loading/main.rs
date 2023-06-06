@@ -9,18 +9,20 @@ use bytemuck::cast_slice;
 use bytemuck_derive::{Pod, Zeroable};
 use futures::executor::block_on;
 use glam::{Mat4, Quat, Vec3};
+use image::GenericImageView;
 use wgpu::{
-    Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingType, BufferBindingType, BufferDescriptor, BufferSize,
-    BufferUsages, Color, CommandEncoderDescriptor, CompareFunction, DepthBiasState,
-    DepthStencilState, Device, DeviceDescriptor, Extent3d, Face, FragmentState, FrontFace,
-    IndexFormat, Instance, InstanceDescriptor, LoadOp, MultisampleState, Operations,
-    PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, Queue,
-    RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-    RenderPipelineDescriptor, RequestAdapterOptions, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, StencilState, Surface, SurfaceConfiguration, Texture, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
-    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType,
+    BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Color, CommandEncoderDescriptor,
+    CompareFunction, DepthBiasState, DepthStencilState, Device, DeviceDescriptor, Extent3d, Face,
+    FilterMode, FragmentState, FrontFace, ImageDataLayout, IndexFormat, Instance,
+    InstanceDescriptor, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor,
+    PowerPreference, PresentMode, PrimitiveState, Queue, RenderPassColorAttachment,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+    RequestAdapterOptions, Sampler, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource,
+    ShaderStages, StencilState, Surface, SurfaceConfiguration, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, VertexAttribute,
+    VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
 use wgpu_samples::camera::{Camera, CameraDescriptor, GpuCamera};
 use winit::{
@@ -73,6 +75,88 @@ impl Transform {
         Self {
             model_matrix,
             normal_matrix,
+        }
+    }
+}
+
+struct Texture {
+    extent: Extent3d,
+    texture: wgpu::Texture,
+    texture_view: TextureView,
+    sampler: Sampler,
+    bind_group: BindGroup,
+}
+
+impl Texture {
+    fn from_bytes(
+        bytes: Vec<u8>,
+        bind_group_layout: &BindGroupLayout,
+        device: &Device,
+        queue: &Queue,
+        label: Option<&str>,
+    ) -> Self {
+        let image = image::load_from_memory(&bytes).expect("unable to load image from bytes");
+        let image_data = image.to_rgba8();
+        let image_size = image.dimensions();
+
+        let extent = Extent3d {
+            width: image_size.0,
+            height: image_size.1,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = device.create_texture(&TextureDescriptor {
+            label,
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let texture_view = texture.create_view(&TextureViewDescriptor::default());
+
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            label,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label,
+            layout: &bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&texture_view),
+                },
+            ],
+        });
+
+        queue.write_texture(
+            texture.as_image_copy(),
+            &image_data,
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * image_size.0),
+                rows_per_image: Some(image_size.1),
+            },
+            extent,
+        );
+
+        Self {
+            extent,
+            texture,
+            texture_view,
+            sampler,
+            bind_group,
         }
     }
 }
