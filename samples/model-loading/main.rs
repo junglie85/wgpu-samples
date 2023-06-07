@@ -1,4 +1,3 @@
-// todo: add a texture.
 // todo: add mesh.
 // todo: add model.
 // todo: assimp stuff.
@@ -8,7 +7,7 @@ use std::{borrow::Cow, iter::once, mem::size_of, time::Instant};
 use bytemuck::cast_slice;
 use bytemuck_derive::{Pod, Zeroable};
 use futures::executor::block_on;
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use image::GenericImageView;
 use wgpu::{
     Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -19,12 +18,16 @@ use wgpu::{
     InstanceDescriptor, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor,
     PowerPreference, PresentMode, PrimitiveState, Queue, RenderPassColorAttachment,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
-    RequestAdapterOptions, Sampler, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, StencilState, Surface, SurfaceConfiguration, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, VertexAttribute,
-    VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    RequestAdapterOptions, Sampler, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StencilState, Surface, SurfaceConfiguration, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexState, VertexStepMode,
 };
-use wgpu_samples::camera::{Camera, CameraDescriptor, GpuCamera};
+use wgpu_samples::{
+    assets,
+    camera::{Camera, CameraDescriptor, GpuCamera},
+};
 use winit::{
     dpi::LogicalSize,
     event::{DeviceEvent, ElementState, Event, MouseScrollDelta, VirtualKeyCode, WindowEvent},
@@ -41,22 +44,33 @@ const TITLE: &'static str = "Model loading";
 #[repr(C)]
 struct Vertex {
     position: Vec3,
+    tex_coords: Vec2,
 }
 
 impl Vertex {
-    fn new(position: Vec3) -> Self {
-        Self { position }
+    fn new(position: Vec3, tex_coords: Vec2) -> Self {
+        Self {
+            position,
+            tex_coords,
+        }
     }
 
     fn layout() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
             array_stride: size_of::<Vertex>() as u64,
             step_mode: VertexStepMode::Vertex,
-            attributes: &[VertexAttribute {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            }],
+            attributes: &[
+                VertexAttribute {
+                    format: VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: size_of::<[f32; 3]>() as u64,
+                    shader_location: 1,
+                },
+            ],
         }
     }
 }
@@ -80,16 +94,16 @@ impl Transform {
 }
 
 struct Texture {
-    extent: Extent3d,
-    texture: wgpu::Texture,
-    texture_view: TextureView,
-    sampler: Sampler,
+    _extent: Extent3d,
+    _texture: wgpu::Texture,
+    _texture_view: TextureView,
+    _sampler: Sampler,
     bind_group: BindGroup,
 }
 
 impl Texture {
     fn from_bytes(
-        bytes: Vec<u8>,
+        bytes: &[u8],
         bind_group_layout: &BindGroupLayout,
         device: &Device,
         queue: &Queue,
@@ -152,10 +166,10 @@ impl Texture {
         );
 
         Self {
-            extent,
-            texture,
-            texture_view,
-            sampler,
+            _extent: extent,
+            _texture: texture,
+            _texture_view: texture_view,
+            _sampler: sampler,
             bind_group,
         }
     }
@@ -210,9 +224,35 @@ fn main() {
         }],
     });
 
+    let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout::texture"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
+    });
+
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("pipeline_layout"),
-        bind_group_layouts: &[&global_bind_group_layout, &transform_bind_group_layout],
+        bind_group_layouts: &[
+            &global_bind_group_layout,
+            &transform_bind_group_layout,
+            &texture_bind_group_layout,
+        ],
         push_constant_ranges: &[],
     });
 
@@ -279,10 +319,10 @@ fn main() {
     });
 
     let vertices = [
-        Vertex::new(Vec3::new(-0.5, 0.5, 0.0)),
-        Vertex::new(Vec3::new(-0.5, -0.5, 0.0)),
-        Vertex::new(Vec3::new(0.5, -0.5, 0.0)),
-        Vertex::new(Vec3::new(0.5, 0.5, 0.0)),
+        Vertex::new(Vec3::new(-0.5, 0.5, 0.0), Vec2::new(0.0, 0.0)),
+        Vertex::new(Vec3::new(-0.5, -0.5, 0.0), Vec2::new(0.0, 1.0)),
+        Vertex::new(Vec3::new(0.5, -0.5, 0.0), Vec2::new(1.0, 1.0)),
+        Vertex::new(Vec3::new(0.5, 0.5, 0.0), Vec2::new(1.0, 0.0)),
     ];
 
     let indices: [u32; 6] = [0, 1, 2, 0, 2, 3];
@@ -322,6 +362,15 @@ fn main() {
             resource: transform_ubo.as_entire_binding(),
         }],
     });
+
+    let texture_bytes = assets::load("assets/awesomeface.png").expect("failed to load asset");
+    let texture = Texture::from_bytes(
+        &texture_bytes,
+        &texture_bind_group_layout,
+        &device,
+        &queue,
+        Some("texture"),
+    );
 
     queue.write_buffer(&vbo, 0, cast_slice(&vertices));
     queue.write_buffer(&ibo, 0, cast_slice(&indices));
@@ -389,6 +438,7 @@ fn main() {
 
             rpass.set_bind_group(0, &global_bind_group, &[]);
             rpass.set_bind_group(1, &transform_bind_group, &[]);
+            rpass.set_bind_group(2, &texture.bind_group, &[]);
             rpass.set_pipeline(&pipeline);
             rpass.set_vertex_buffer(0, vbo.slice(..));
             rpass.set_index_buffer(ibo.slice(..), IndexFormat::Uint32);
@@ -469,7 +519,7 @@ fn setup_surface(
     config
 }
 
-fn create_depth_texture(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
+fn create_depth_texture(device: &Device, width: u32, height: u32) -> (wgpu::Texture, TextureView) {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some("depth_texture"),
         size: Extent3d {
@@ -496,7 +546,7 @@ fn process_events(
     device: &Device,
     surface: &Surface,
     surface_config: &mut SurfaceConfiguration,
-    depth_texture: &mut Texture,
+    depth_texture: &mut wgpu::Texture,
     depth_texture_view: &mut TextureView,
     camera: &mut Camera,
     dt: f32,
