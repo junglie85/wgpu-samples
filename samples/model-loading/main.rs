@@ -1,7 +1,6 @@
-// todo: add model.
 // todo: assimp stuff.
 
-use std::{borrow::Cow, iter::once, mem::size_of, time::Instant};
+use std::{borrow::Cow, iter::once, mem::size_of, path::Path, time::Instant};
 
 use bytemuck::cast_slice;
 use bytemuck_derive::{Pod, Zeroable};
@@ -189,7 +188,7 @@ impl Material {
 struct Mesh {
     _vertices: Vec<Vertex>,
     indices: Vec<u32>,
-    material: Material,
+    material_id: usize,
     vbo: Buffer,
     ibo: Buffer,
 }
@@ -199,7 +198,7 @@ impl Mesh {
         device: &Device,
         vertices: Vec<Vertex>,
         indices: Vec<u32>,
-        material: Material,
+        material_id: usize,
         label: Option<&str>,
     ) -> Self {
         let vbo = device.create_buffer_init(&BufferInitDescriptor {
@@ -217,17 +216,47 @@ impl Mesh {
         Self {
             _vertices: vertices,
             indices,
-            material,
+            material_id,
             vbo,
             ibo,
         }
     }
+}
 
-    fn draw<'a>(&'a self, rpass: &mut RenderPass<'a>) {
-        rpass.set_vertex_buffer(0, self.vbo.slice(..));
-        rpass.set_index_buffer(self.ibo.slice(..), IndexFormat::Uint32);
-        rpass.set_bind_group(2, &self.material.bind_group, &[]);
-        rpass.draw_indexed(0..self.indices.len() as u32, 0, 0..1);
+struct Model {
+    materials: Vec<Material>,
+    meshes: Vec<Mesh>,
+}
+
+impl Model {
+    fn load<P>(path: P, device: &Device, queue: &Queue, layout: &BindGroupLayout) -> Self
+    where
+        P: AsRef<Path>,
+    {
+        let mut materials = Vec::new();
+        let mut meshes = Vec::new();
+
+        let vertices = vec![
+            Vertex::new(Vec3::new(-0.5, 0.5, 0.0), Vec2::new(0.0, 0.0)),
+            Vertex::new(Vec3::new(-0.5, -0.5, 0.0), Vec2::new(0.0, 1.0)),
+            Vertex::new(Vec3::new(0.5, -0.5, 0.0), Vec2::new(1.0, 1.0)),
+            Vertex::new(Vec3::new(0.5, 0.5, 0.0), Vec2::new(1.0, 0.0)),
+        ];
+
+        let indices = vec![0, 1, 2, 0, 2, 3];
+
+        let label = path.as_ref().to_str();
+        let texture_bytes = assets::load(path.as_ref()).expect("failed to load asset");
+        let texture = Texture::from_bytes(&texture_bytes, &device, &queue, label);
+        let material = Material::new(&device, &layout, texture, label);
+
+        let material_id = materials.len();
+        materials.push(material);
+
+        let mesh = Mesh::new(&device, vertices, indices, material_id, label);
+        meshes.push(mesh);
+
+        Self { materials, meshes }
     }
 }
 
@@ -374,14 +403,12 @@ fn main() {
         }],
     });
 
-    let vertices = vec![
-        Vertex::new(Vec3::new(-0.5, 0.5, 0.0), Vec2::new(0.0, 0.0)),
-        Vertex::new(Vec3::new(-0.5, -0.5, 0.0), Vec2::new(0.0, 1.0)),
-        Vertex::new(Vec3::new(0.5, -0.5, 0.0), Vec2::new(1.0, 1.0)),
-        Vertex::new(Vec3::new(0.5, 0.5, 0.0), Vec2::new(1.0, 0.0)),
-    ];
-
-    let indices = vec![0, 1, 2, 0, 2, 3];
+    let model = Model::load(
+        "assets/awesomeface.png",
+        &device,
+        &queue,
+        &texture_bind_group_layout,
+    );
 
     let transform = Transform::new(Mat4::from_scale_rotation_translation(
         Vec3::ONE,
@@ -406,11 +433,6 @@ fn main() {
     });
 
     queue.write_buffer(&transform_ubo, 0, cast_slice(&[transform]));
-
-    let texture_bytes = assets::load("assets/awesomeface.png").expect("failed to load asset");
-    let texture = Texture::from_bytes(&texture_bytes, &device, &queue, Some("face"));
-    let material = Material::new(&device, &texture_bind_group_layout, texture, Some("face"));
-    let mesh = Mesh::new(&device, vertices, indices, material, Some("face"));
 
     window.set_cursor_visible(false);
     window
@@ -475,7 +497,15 @@ fn main() {
             rpass.set_bind_group(0, &global_bind_group, &[]);
             rpass.set_bind_group(1, &transform_bind_group, &[]);
             rpass.set_pipeline(&pipeline);
-            mesh.draw(&mut rpass);
+
+            for mesh in &model.meshes {
+                let material = &model.materials[mesh.material_id];
+
+                rpass.set_vertex_buffer(0, mesh.vbo.slice(..));
+                rpass.set_index_buffer(mesh.ibo.slice(..), IndexFormat::Uint32);
+                rpass.set_bind_group(2, &material.bind_group, &[]);
+                rpass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
+            }
         }
 
         queue.submit(once(encoder.finish()));
