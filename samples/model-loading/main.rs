@@ -1,4 +1,3 @@
-// todo: add mesh.
 // todo: add model.
 // todo: assimp stuff.
 
@@ -10,13 +9,14 @@ use futures::executor::block_on;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use image::GenericImageView;
 use wgpu::{
+    util::{BufferInitDescriptor, DeviceExt},
     Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Color, CommandEncoderDescriptor,
     CompareFunction, DepthBiasState, DepthStencilState, Device, DeviceDescriptor, Extent3d, Face,
     FilterMode, FragmentState, FrontFace, ImageDataLayout, IndexFormat, Instance,
     InstanceDescriptor, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor,
-    PowerPreference, PresentMode, PrimitiveState, Queue, RenderPassColorAttachment,
+    PowerPreference, PresentMode, PrimitiveState, Queue, RenderPass, RenderPassColorAttachment,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
     RequestAdapterOptions, Sampler, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor,
     ShaderSource, ShaderStages, StencilState, Surface, SurfaceConfiguration, TextureDescriptor,
@@ -96,19 +96,12 @@ impl Transform {
 struct Texture {
     _extent: Extent3d,
     _texture: wgpu::Texture,
-    _texture_view: TextureView,
-    _sampler: Sampler,
-    bind_group: BindGroup,
+    texture_view: TextureView,
+    sampler: Sampler,
 }
 
 impl Texture {
-    fn from_bytes(
-        bytes: &[u8],
-        bind_group_layout: &BindGroupLayout,
-        device: &Device,
-        queue: &Queue,
-        label: Option<&str>,
-    ) -> Self {
+    fn from_bytes(bytes: &[u8], device: &Device, queue: &Queue, label: Option<&str>) -> Self {
         let image = image::load_from_memory(&bytes).expect("unable to load image from bytes");
         let image_data = image.to_rgba8();
         let image_size = image.dimensions();
@@ -139,21 +132,6 @@ impl Texture {
             ..Default::default()
         });
 
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label,
-            layout: &bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureView(&texture_view),
-                },
-            ],
-        });
-
         queue.write_texture(
             texture.as_image_copy(),
             &image_data,
@@ -168,10 +146,88 @@ impl Texture {
         Self {
             _extent: extent,
             _texture: texture,
-            _texture_view: texture_view,
-            _sampler: sampler,
+            texture_view,
+            sampler,
+        }
+    }
+}
+
+struct Material {
+    _diffuse_texture: Texture,
+    bind_group: BindGroup,
+}
+
+impl Material {
+    fn new(
+        device: &Device,
+        layout: &BindGroupLayout,
+        diffuse_texture: Texture,
+        label: Option<&str>,
+    ) -> Self {
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label,
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&diffuse_texture.texture_view),
+                },
+            ],
+        });
+
+        Self {
+            _diffuse_texture: diffuse_texture,
             bind_group,
         }
+    }
+}
+
+struct Mesh {
+    _vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    material: Material,
+    vbo: Buffer,
+    ibo: Buffer,
+}
+
+impl Mesh {
+    fn new(
+        device: &Device,
+        vertices: Vec<Vertex>,
+        indices: Vec<u32>,
+        material: Material,
+        label: Option<&str>,
+    ) -> Self {
+        let vbo = device.create_buffer_init(&BufferInitDescriptor {
+            label,
+            contents: cast_slice(&vertices),
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        });
+
+        let ibo = device.create_buffer_init(&BufferInitDescriptor {
+            label,
+            contents: cast_slice(&indices),
+            usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+        });
+
+        Self {
+            _vertices: vertices,
+            indices,
+            material,
+            vbo,
+            ibo,
+        }
+    }
+
+    fn draw<'a>(&'a self, rpass: &mut RenderPass<'a>) {
+        rpass.set_vertex_buffer(0, self.vbo.slice(..));
+        rpass.set_index_buffer(self.ibo.slice(..), IndexFormat::Uint32);
+        rpass.set_bind_group(2, &self.material.bind_group, &[]);
+        rpass.draw_indexed(0..self.indices.len() as u32, 0, 0..1);
     }
 }
 
@@ -318,34 +374,20 @@ fn main() {
         }],
     });
 
-    let vertices = [
+    let vertices = vec![
         Vertex::new(Vec3::new(-0.5, 0.5, 0.0), Vec2::new(0.0, 0.0)),
         Vertex::new(Vec3::new(-0.5, -0.5, 0.0), Vec2::new(0.0, 1.0)),
         Vertex::new(Vec3::new(0.5, -0.5, 0.0), Vec2::new(1.0, 1.0)),
         Vertex::new(Vec3::new(0.5, 0.5, 0.0), Vec2::new(1.0, 0.0)),
     ];
 
-    let indices: [u32; 6] = [0, 1, 2, 0, 2, 3];
+    let indices = vec![0, 1, 2, 0, 2, 3];
 
     let transform = Transform::new(Mat4::from_scale_rotation_translation(
         Vec3::ONE,
         Quat::IDENTITY,
         Vec3::ZERO,
     ));
-
-    let vbo = device.create_buffer(&BufferDescriptor {
-        label: Some("vbo"),
-        size: size_of::<Vertex>() as u64 * vertices.len() as u64,
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let ibo = device.create_buffer(&BufferDescriptor {
-        label: Some("ibo"),
-        size: size_of::<u32>() as u64 * indices.len() as u64,
-        usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
 
     let transform_ubo = device.create_buffer(&BufferDescriptor {
         label: Some("ubo::transform"),
@@ -363,18 +405,12 @@ fn main() {
         }],
     });
 
-    let texture_bytes = assets::load("assets/awesomeface.png").expect("failed to load asset");
-    let texture = Texture::from_bytes(
-        &texture_bytes,
-        &texture_bind_group_layout,
-        &device,
-        &queue,
-        Some("texture"),
-    );
-
-    queue.write_buffer(&vbo, 0, cast_slice(&vertices));
-    queue.write_buffer(&ibo, 0, cast_slice(&indices));
     queue.write_buffer(&transform_ubo, 0, cast_slice(&[transform]));
+
+    let texture_bytes = assets::load("assets/awesomeface.png").expect("failed to load asset");
+    let texture = Texture::from_bytes(&texture_bytes, &device, &queue, Some("face"));
+    let material = Material::new(&device, &texture_bind_group_layout, texture, Some("face"));
+    let mesh = Mesh::new(&device, vertices, indices, material, Some("face"));
 
     window.set_cursor_visible(false);
     window
@@ -438,11 +474,8 @@ fn main() {
 
             rpass.set_bind_group(0, &global_bind_group, &[]);
             rpass.set_bind_group(1, &transform_bind_group, &[]);
-            rpass.set_bind_group(2, &texture.bind_group, &[]);
             rpass.set_pipeline(&pipeline);
-            rpass.set_vertex_buffer(0, vbo.slice(..));
-            rpass.set_index_buffer(ibo.slice(..), IndexFormat::Uint32);
-            rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
+            mesh.draw(&mut rpass);
         }
 
         queue.submit(once(encoder.finish()));
